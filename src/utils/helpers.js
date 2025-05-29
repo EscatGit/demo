@@ -44,16 +44,26 @@ export const filtrarPosicionsElegibles = (posicions, candidat) => {
 export const simularNotificacions = (candidats, posicions) => {
   return candidats.map(c => {
     if (Math.random() > 0.3) {
+      // Filtrar posiciones elegibles para este candidato
       const posicionsElegibles = posicions.filter(p => 
         p.categoria === c.categoria && 
-        p.especialitat === c.especialitat
+        p.especialitat === c.especialitat &&
+        p.placesDisponibles > 0  // También verificar que tenga plazas disponibles
       );
-      const prioritats = posicionsElegibles
-        .sort(() => Math.random() - 0.5)
-        .slice(0, Math.min(5, posicionsElegibles.length))
-        .map((p, index) => ({ posicioId: p.id, prioritat: index + 1 }));
       
-      return { ...c, estat: 'respost', prioritats };
+      // VALIDACIÓN: Solo cambiar estado si hay opciones disponibles
+      if (posicionsElegibles.length > 0) {
+        const prioritats = posicionsElegibles
+          .sort(() => Math.random() - 0.5)
+          .slice(0, Math.min(5, posicionsElegibles.length))
+          .map((p, index) => ({ posicioId: p.id, prioritat: index + 1 }));
+        
+        return { ...c, estat: 'respost', prioritats };
+      } else {
+        // Si no hay opciones elegibles, mantener el estado actual (pendent)
+        console.log(`${c.nom} no té opcions elegibles disponibles - mantingut en estat 'pendent'`);
+        return c;
+      }
     }
     return c;
   });
