@@ -1,10 +1,32 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Award, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
 import { useAdjudicacio } from '../../context/AdjudicacioContext';
 import { formatTemps } from '../../utils/helpers';
 
 const OfertaAdjudicada = ({ candidat, adjudicacio }) => {
-  const { posicions, tempsRestant, gestionarOferta } = useAdjudicacio();
+  const { posicions, acceptarAdjudicacio, rebutjarAdjudicacio } = useAdjudicacio();
+  const [tempsRestant, setTempsRestant] = useState(null);
+  
+  // Calcular tiempo restante igual que en GrupsConcurrents.jsx
+  useEffect(() => {
+    if (adjudicacio && adjudicacio.dataLimitAcceptacio && adjudicacio.estat === 'pendent') {
+      const interval = setInterval(() => {
+        const ara = new Date();
+        const limit = new Date(adjudicacio.dataLimitAcceptacio);
+        const diferencia = Math.max(0, Math.floor((limit - ara) / 1000));
+        setTempsRestant(diferencia);
+        
+        // Si el tiempo se agota, limpiar el interval
+        if (diferencia <= 0) {
+          clearInterval(interval);
+        }
+      }, 1000);
+      
+      return () => clearInterval(interval);
+    } else {
+      setTempsRestant(null);
+    }
+  }, [adjudicacio]);
   
   const posicioAdjudicada = posicions.find(p => p.id === adjudicacio.posicioId);
 
@@ -15,6 +37,23 @@ const OfertaAdjudicada = ({ candidat, adjudicacio }) => {
       </div>
     );
   }
+
+  // Handlers para aceptar/rechazar
+  const handleAcceptarOferta = async () => {
+    try {
+      await acceptarAdjudicacio(adjudicacio.id);
+    } catch (error) {
+      console.error('Error acceptant l\'oferta:', error);
+    }
+  };
+
+  const handleRebutjarOferta = async () => {
+    try {
+      await rebutjarAdjudicacio(adjudicacio.id);
+    } catch (error) {
+      console.error('Error rebutjant l\'oferta:', error);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -65,6 +104,20 @@ const OfertaAdjudicada = ({ candidat, adjudicacio }) => {
                   </div>
                 </div>
               )}
+
+              {/* Información adicional de la adjudicación */}
+              <div className="mt-4 pt-4 border-t">
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <p className="text-gray-500">Preferència seleccionada</p>
+                    <p className="font-medium text-blue-600">#{adjudicacio.preferencia}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-500">Ronda d'adjudicació</p>
+                    <p className="font-medium text-blue-600">{adjudicacio.ronda}</p>
+                  </div>
+                </div>
+              </div>
             </div>
             
             <div className="text-center ml-6">
@@ -95,14 +148,14 @@ const OfertaAdjudicada = ({ candidat, adjudicacio }) => {
         {adjudicacio.estat === 'pendent' ? (
           <div className="flex gap-4">
             <button
-              onClick={() => gestionarOferta(candidat.id, true)}
+              onClick={handleAcceptarOferta}
               className="flex-1 bg-green-600 text-white py-3 rounded-lg font-medium hover:bg-green-700 transition-colors flex items-center justify-center gap-2 shadow-md"
             >
               <CheckCircle size={20} />
               Acceptar Oferta
             </button>
             <button
-              onClick={() => gestionarOferta(candidat.id, false)}
+              onClick={handleRebutjarOferta}
               className="flex-1 bg-red-600 text-white py-3 rounded-lg font-medium hover:bg-red-700 transition-colors flex items-center justify-center gap-2 shadow-md"
             >
               <XCircle size={20} />
@@ -111,29 +164,37 @@ const OfertaAdjudicada = ({ candidat, adjudicacio }) => {
           </div>
         ) : (
           <div className={`text-center py-6 rounded-lg ${
-            adjudicacio.estat === 'acceptada' 
+            adjudicacio.estat === 'acceptat' 
               ? 'bg-green-100 text-green-800' 
               : 'bg-red-100 text-red-800'
           }`}>
             <div className="flex items-center justify-center gap-2 mb-2">
-              {adjudicacio.estat === 'acceptada' ? (
+              {adjudicacio.estat === 'acceptat' ? (
                 <CheckCircle size={24} />
               ) : (
                 <XCircle size={24} />
               )}
               <p className="font-semibold text-lg">
-                {adjudicacio.estat === 'acceptada' 
+                {adjudicacio.estat === 'acceptat' 
                   ? 'Oferta acceptada amb signatura digital'
                   : 'Oferta rebutjada'
                 }
               </p>
             </div>
             
-            {adjudicacio.estat === 'acceptada' && (
+            {adjudicacio.estat === 'acceptat' && (
               <div className="text-sm mt-2 space-y-1">
                 <p>Contracte signat digitalment el {new Date().toLocaleDateString('ca-ES')}</p>
                 <p>Rebràs un correu amb els detalls del contracte i les instruccions per incorporar-te.</p>
                 <p className="font-medium mt-3">¡Felicitats! Benvingut/da a l'Hospital del Mar</p>
+              </div>
+            )}
+            
+            {adjudicacio.estat === 'rebutjat' && (
+              <div className="text-sm mt-2 space-y-1">
+                <p>Has rebutjat aquesta oferta el {new Date(adjudicacio.dataAdjudicacio).toLocaleDateString('ca-ES')}</p>
+                <p>El sistema continuarà processant altres candidats per aquesta plaça.</p>
+                <p className="font-medium mt-3">Pots seguir participant en futures rondes d'adjudicació.</p>
               </div>
             )}
           </div>
