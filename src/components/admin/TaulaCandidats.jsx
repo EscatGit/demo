@@ -38,11 +38,11 @@ const TaulaCandidats = ({ onVeureDetalls }) => {
     
     // Aplicar cerca per nom o telèfon
     if (cercaText) {
-      filtrats = filtrats.filter(c => 
-        c.nom.toLowerCase().includes(cercaText.toLowerCase()) ||
-        (c.telefon && c.telefon.includes(cercaText))
-      );
-    }
+	filtrats = filtrats.filter(c => 
+		 c.nom.toLowerCase().includes(cercaText.toLowerCase()) ||
+		(c.telefon && c.telefon.toString().includes(cercaText))
+  );
+}
     
     // Aplicar filtres
     if (filtreCategoria) {
