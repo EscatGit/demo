@@ -1,5 +1,3 @@
-// utils/adjudicacioRondes.js
-
 export class AdjudicacioRondes {
   constructor(candidats, posicions) {
     this.candidats = [...candidats];
@@ -9,7 +7,6 @@ export class AdjudicacioRondes {
     this.placesIndividuals = this.crearPlacesIndividuals();
   }
 
-  // Crear grupos concurrentes por categoría
   crearGrupsConcurrents() {
     const grups = {};
     
@@ -26,7 +23,6 @@ export class AdjudicacioRondes {
         };
       }
       
-      // Solo incluir candidatos que han respondido
       if (candidat.estat === 'respost') {
         grups[candidat.categoria].candidatsActius.push(candidat.id);
       }
@@ -35,7 +31,6 @@ export class AdjudicacioRondes {
     return grups;
   }
 
-  // Crear plazas individuales con estado
   crearPlacesIndividuals() {
     const places = [];
     
@@ -56,9 +51,7 @@ export class AdjudicacioRondes {
     return places;
   }
 
-  // Iniciar proceso de adjudicación para todos los grupos
   iniciarAdjudicacio() {
-    // CAMBIO 1: Marcar candidatos "pendent" como "rebutjat"
     this.candidats.forEach(candidat => {
       if (candidat.estat === 'pendent') {
         candidat.estat = 'desqualificat';
@@ -66,7 +59,6 @@ export class AdjudicacioRondes {
       }
     });
 
-    // Iniciar proceso para cada grupo
     Object.values(this.grupsConcurrents).forEach(grup => {
       if (grup.candidatsActius.length > 0) {
         grup.estatRonda = 'processant';
@@ -76,90 +68,72 @@ export class AdjudicacioRondes {
     });
   }
 
-  // Procesar una ronda para un grupo específico
   processarRondaGrup(grup) {
     console.log(`Processant ronda ${grup.rondaActual} per ${grup.nom}`);
     
-    // Obtener candidatos activos del grupo ordenados por puntuación
     const candidatsGrup = grup.candidatsActius
       .map(id => this.candidats.find(c => c.id === id))
       .filter(c => c && c.estat !== 'contractat' && c.estat !== 'rebutjat')
       .sort((a, b) => b.puntuacio - a.puntuacio);
 
     let algunaAssignacio = false;
-    let algunaPendent = false;
+    let grupDeveEsperar = false;
     
-    // Procesar candidatos uno por uno en orden de puntuación
     for (const candidat of candidatsGrup) {
-      // Si el candidato ya tiene una adjudicación pendiente, no evaluar más
       if (candidat.estat === 'adjudicat') {
-        algunaPendent = true;
         continue;
       }
 
-      // CAMBIO 2: Evaluar TODAS las preferencias desde la primera
       let assignat = false;
-      let esperantPlacaPendent = false;
 
       for (let i = 0; i < candidat.prioritats.length; i++) {
         const preferencia = candidat.prioritats[i];
         
-        // Verificar si hay plaza libre
         const placaDisponible = this.buscarPlacaDisponible(preferencia.posicioId, grup.categoria);
         
         if (placaDisponible) {
-          // Asignar la plaza
           this.assignarPlaca(placaDisponible, candidat, preferencia, grup);
           assignat = true;
           algunaAssignacio = true;
           break;
         } else {
-          // No hay plaza libre, verificar si hay plazas pendientes
-          const placaPendent = this.buscarPlacaPendent(preferencia.posicioId, grup.categoria);
+          const placaPendentDelGrup = this.buscarPlacaPendentDelGrup(preferencia.posicioId, grup);
           
-          if (placaPendent) {
-            // Hay plaza pendiente, debe esperar
-            console.log(`${candidat.nom} espera plaza pendent en ${preferencia.posicioId} (preferència ${preferencia.prioritat})`);
-            esperantPlacaPendent = true;
-            algunaPendent = true;
-            break; // No evaluar más preferencias
+          if (placaPendentDelGrup) {
+            console.log(`${candidat.nom} troba plaza pendent del mateix grup en ${preferencia.posicioId} (preferència ${preferencia.prioritat})`);
+            console.log(`GRUP ${grup.nom} ATURA la ronda ${grup.rondaActual} - esperant confirmacions internes`);
+            grupDeveEsperar = true;
+            break;
           }
-          // Si no hay plaza libre ni pendiente, continuar con la siguiente preferencia
+          console.log(`${candidat.nom} - plaza ${preferencia.posicioId} ocupada/pendent d'altre grup - continuant amb següent preferència`);
         }
       }
 
-      // Si no se asignó ninguna plaza y no está esperando
-      if (!assignat && !esperantPlacaPendent) {
-        // El candidato no tiene más opciones disponibles
+      if (grupDeveEsperar) {
+        break;
+      }
+
+      if (!assignat) {
         candidat.estat = 'rebutjat';
         this.eliminarCandidatDelGrup(grup, candidat.id);
         console.log(`${candidat.nom} passa a estat 'rebutjat' - sense opcions disponibles`);
       }
     }
 
-    // Determinar siguiente estado del grupo
-    if (grup.adjudicacionsPendents.length > 0) {
+    if (grup.adjudicacionsPendents.length > 0 || grupDeveEsperar) {
       grup.estatRonda = 'esperant_confirmacions';
       grup.dataIniciFase = new Date();
       console.log(`Grup ${grup.nom} esperant ${grup.adjudicacionsPendents.length} confirmacions`);
-    } else if (algunaPendent) {
-      // Hay candidatos esperando plazas pendientes de otras rondas
-      console.log(`Grup ${grup.nom} té candidats esperant places pendents`);
-      // Programar verificación periódica
-      setTimeout(() => this.verificarContinuitatGrup(grup), 5000);
     } else if (algunaAssignacio) {
-      // Se hicieron asignaciones, preparar siguiente ronda
       grup.rondaActual++;
       grup.estatRonda = 'processant';
       setTimeout(() => this.processarRondaGrup(grup), 100);
     } else {
-      // No hay más candidatos activos o no se pueden hacer más asignaciones
       grup.estatRonda = 'finalitzada';
       console.log(`Grup ${grup.nom} finalitzat`);
     }
   }
 
-  // Buscar plaza libre para una posición
   buscarPlacaDisponible(posicioId, categoria) {
     return this.placesIndividuals.find(placa => 
       placa.posicioId === posicioId && 
@@ -168,16 +142,15 @@ export class AdjudicacioRondes {
     );
   }
 
-  // Buscar plaza pendiente de confirmación
-  buscarPlacaPendent(posicioId, categoria) {
+  buscarPlacaPendentDelGrup(posicioId, grup) {
     return this.placesIndividuals.find(placa => 
       placa.posicioId === posicioId && 
-      placa.categoria === categoria &&
-      placa.estat === 'pendent'
+      placa.categoria === grup.categoria &&
+      placa.estat === 'pendent' &&
+      grup.adjudicacionsPendents.includes(placa.adjudicacioId)
     );
   }
 
-  // Asignar plaza a candidato
   assignarPlaca(placa, candidat, preferencia, grup) {
     const adjudicacio = {
       id: `adj_${Date.now()}_${candidat.id}`,
@@ -192,26 +165,21 @@ export class AdjudicacioRondes {
       grupConcurrent: grup.nom
     };
 
-    // Actualizar estado de la plaza
     placa.estat = 'pendent';
     placa.candidatAssignat = candidat.id;
     placa.adjudicacioId = adjudicacio.id;
 
-    // Actualizar estado del candidato
     candidat.estat = 'adjudicat';
     candidat.posicioAdjudicada = preferencia.posicioId;
 
-    // Agregar a adjudicaciones
     this.adjudicacions.push(adjudicacio);
     grup.adjudicacionsPendents.push(adjudicacio.id);
 
     console.log(`Assignada plaza ${placa.id} a ${candidat.nom} (preferència ${preferencia.prioritat}, ronda ${grup.rondaActual})`);
 
-    // Programar timeout automático
     this.programarTimeout(adjudicacio);
   }
 
-  // Programar timeout automático para rechazo
   programarTimeout(adjudicacio) {
     setTimeout(() => {
       if (adjudicacio.estat === 'pendent') {
@@ -220,7 +188,6 @@ export class AdjudicacioRondes {
     }, 24 * 60 * 60 * 1000);
   }
 
-  // Acceptar adjudicación
   acceptarAdjudicacio(adjudicacioId) {
     const adjudicacio = this.adjudicacions.find(a => a.id === adjudicacioId);
     if (!adjudicacio || adjudicacio.estat !== 'pendent') return false;
@@ -229,23 +196,19 @@ export class AdjudicacioRondes {
     const placa = this.placesIndividuals.find(p => p.id === adjudicacio.placaId);
     const grup = this.grupsConcurrents[candidat.categoria];
 
-    // Actualizar estados
     adjudicacio.estat = 'acceptat';
     candidat.estat = 'contractat';
     placa.estat = 'ocupada';
 
-    // Eliminar de adjudicaciones pendientes del grupo
     grup.adjudicacionsPendents = grup.adjudicacionsPendents.filter(id => id !== adjudicacioId);
     this.eliminarCandidatDelGrup(grup, candidat.id);
 
     console.log(`${candidat.nom} ha acceptat la plaza ${placa.id}`);
 
-    // Verificar si el grupo puede continuar
     this.verificarContinuitatGrup(grup);
     return true;
   }
 
-  // Rechazar adjudicación
   rebutjarAdjudicacio(adjudicacioId, automatic = false) {
     const adjudicacio = this.adjudicacions.find(a => a.id === adjudicacioId);
     if (!adjudicacio || adjudicacio.estat !== 'pendent') return false;
@@ -254,79 +217,58 @@ export class AdjudicacioRondes {
     const placa = this.placesIndividuals.find(p => p.id === adjudicacio.placaId);
     const grup = this.grupsConcurrents[candidat.categoria];
 
-    // Actualizar estados
     adjudicacio.estat = 'rebutjat';
     candidat.estat = 'rebutjat';
-    placa.estat = 'lliure'; // IMPORTANTE: La plaza vuelve a estar libre
+    placa.estat = 'lliure';
     placa.candidatAssignat = null;
     placa.adjudicacioId = null;
 
-    // Eliminar de adjudicaciones pendientes del grupo
     grup.adjudicacionsPendents = grup.adjudicacionsPendents.filter(id => id !== adjudicacioId);
     this.eliminarCandidatDelGrup(grup, candidat.id);
 
     console.log(`${candidat.nom} ha rebutjat la plaza ${placa.id} ${automatic ? '(automàtic)' : ''}`);
     console.log(`Plaza ${placa.id} torna a estar lliure`);
 
-    // IMPORTANTE: Notificar a otros grupos que podrían estar esperando esta plaza
     this.notificarPlazaLliure(placa);
 
-    // Verificar si el grupo puede continuar
     this.verificarContinuitatGrup(grup);
     return true;
   }
 
-  // Notificar que una plaza está libre a grupos que podrían estar esperándola
   notificarPlazaLliure(placa) {
-    Object.values(this.grupsConcurrents).forEach(grup => {
-      if (grup.categoria === placa.categoria && 
-          grup.estatRonda === 'processant' || 
-          grup.estatRonda === 'esperant_confirmacions') {
-        // Re-evaluar el grupo por si hay candidatos esperando esta plaza
-        console.log(`Notificant a grup ${grup.nom} que plaza ${placa.id} està lliure`);
-        setTimeout(() => this.verificarContinuitatGrup(grup), 1000);
-      }
-    });
+    const grup = Object.values(this.grupsConcurrents).find(g => g.categoria === placa.categoria);
+    
+    if (grup && grup.estatRonda === 'esperant_confirmacions') {
+      console.log(`Notificant a grup ${grup.nom} que plaza ${placa.id} està lliure`);
+      setTimeout(() => this.verificarContinuitatGrup(grup), 1000);
+    }
   }
 
-  // Eliminar candidato del grupo activo
   eliminarCandidatDelGrup(grup, candidatId) {
     grup.candidatsActius = grup.candidatsActius.filter(id => id !== candidatId);
   }
 
-  // Verificar si el grupo puede continuar con la siguiente ronda
   verificarContinuitatGrup(grup) {
-    // Si el grupo ya está finalizado, no hacer nada
     if (grup.estatRonda === 'finalitzada') return;
 
-    // Si hay adjudicaciones pendientes, esperar
     if (grup.adjudicacionsPendents.length > 0) {
       grup.estatRonda = 'esperant_confirmacions';
       return;
     }
 
-    // Si no hay candidatos activos, finalizar
     if (grup.candidatsActius.length === 0) {
       grup.estatRonda = 'finalitzada';
       console.log(`Grup ${grup.nom} finalitzat - sense candidats actius`);
       return;
     }
 
-    // Si estaba esperando confirmaciones y ya no hay pendientes, continuar
-    if (grup.estatRonda === 'esperant_confirmacions') {
-      grup.rondaActual++;
-      grup.estatRonda = 'processant';
-      grup.dataIniciFase = new Date();
-      console.log(`Grup ${grup.nom} continua amb ronda ${grup.rondaActual}`);
-      setTimeout(() => this.processarRondaGrup(grup), 1000);
-    } else {
-      // Re-procesar el grupo actual por si hay nuevas plazas libres
-      grup.estatRonda = 'processant';
-      setTimeout(() => this.processarRondaGrup(grup), 1000);
-    }
+    grup.rondaActual++;
+    grup.estatRonda = 'processant';
+    grup.dataIniciFase = new Date();
+    console.log(`Grup ${grup.nom} continua amb ronda ${grup.rondaActual}`);
+    setTimeout(() => this.processarRondaGrup(grup), 1000);
   }
 
-  // Obtener estado actual del proceso
   obtenirEstatActual() {
     return {
       grupsConcurrents: this.grupsConcurrents,
@@ -337,7 +279,6 @@ export class AdjudicacioRondes {
     };
   }
 
-  // Obtener estadísticas del proceso
   obtenirEstadistiques() {
     const stats = {};
     
@@ -361,45 +302,39 @@ export class AdjudicacioRondes {
     return stats;
   }
 
-  // Obtener estadísticas globales detalladas
   obtenirEstadistiquesGlobals() {
     const estadistiques = {
-      // Candidatos por estado
       candidatsTotals: this.candidats.length,
       candidatsPendent: this.candidats.filter(c => ['pendent', 'desqualificat'].includes(c.estat)).length,
       candidatsRespost: this.candidats.filter(c => ['respost', 'adjudicat', 'contractat', 'rebutjat'].includes(c.estat)).length,
       candidatsAdjudicat: this.candidats.filter(c => c.estat === 'adjudicat').length,
       candidatsContractat: this.candidats.filter(c => c.estat === 'contractat').length,
       candidatsRebutjat: this.candidats.filter(c => c.estat === 'rebutjat').length,
-	  candidatsDesqualificat: this.candidats.filter(c => c.estat === 'desqualificat').length,
+      candidatsDesqualificat: this.candidats.filter(c => c.estat === 'desqualificat').length,
       
-      // Plazas por estado
       placesTotals: this.placesIndividuals.length,
       placesLliures: this.placesIndividuals.filter(p => p.estat === 'lliure').length,
       placesPendents: this.placesIndividuals.filter(p => p.estat === 'pendent').length,
       placesOcupades: this.placesIndividuals.filter(p => p.estat === 'ocupada').length,
       
-      // Adjudicaciones
       adjudicacionsTotals: this.adjudicacions.length,
       adjudicacionsPendents: this.adjudicacions.filter(a => a.estat === 'pendent').length,
       adjudicacionsAcceptades: this.adjudicacions.filter(a => a.estat === 'acceptat').length,
       adjudicacionsRebutjades: this.adjudicacions.filter(a => a.estat === 'rebutjat').length,
       
-      // Proceso
       procesActiu: Object.values(this.grupsConcurrents).some(g => 
-        g.estatRonda === 'processant' || g.estatRonda === 'esperant_confirmacions'
+        g.estatRonda === 'processant' || 
+        g.estatRonda === 'esperant_confirmacions'
       ),
       grupsActius: Object.values(this.grupsConcurrents).filter(g => 
         g.estatRonda !== 'finalitzada'
       ).length,
       grupsTotals: Object.keys(this.grupsConcurrents).length,
       
-      // Ratio de éxito
       taxaAcceptacio: this.adjudicacions.length > 0 
         ? Math.round((this.adjudicacions.filter(a => a.estat === 'acceptat').length / this.adjudicacions.length) * 100)
         : 0,
       
-      // Por posición (para actualizar PosicionsTempsReal)
       posicionsDetall: this.posicions.map(pos => {
         const placesPos = this.placesIndividuals.filter(p => p.posicioId === pos.id);
         return {
